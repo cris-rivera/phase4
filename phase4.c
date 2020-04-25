@@ -25,7 +25,11 @@
 
 /* semaphore to synchronize drivers and start3 */
 static int running;
-static int num_tracks[2];
+static int num_tracks[NUM_DISK];
+static int device_zapper;
+static int size_disk;
+static int size_sector;
+static int size_track;
 
 /* Driver Process Table */
 static struct driver_proc Driver_Table[MAXPROC];
@@ -34,15 +38,16 @@ static struct driver_proc Driver_Table[MAXPROC];
 static int diskpids[DISK_UNITS];
 
 /* Driver List(s) */
-static driver_proc_ptr DriverList;
+static driver_proc_ptr DriverList_U0; //For Disk Unit 0
+static driver_proc_ptr DriverList_U1; //For Disk Unit 1
 
 /* ------------------------- Prototypes ----------------------------------- */
 
 //static int	ClockDriver(char *);
 static int	DiskDriver(char *);
 static void disk_size(sysargs *args_ptr);
-static void DriverList_Insert(driver_proc_ptr dptr);
-static void DriverList_Pop();
+static void DriverList_Insert(driver_proc_ptr dptr, int unit_list);
+static void DriverList_Pop(int unit);
 static int seek_proc_entry();
 
 /* -------------------------- Functions ----------------------------------- */
@@ -63,6 +68,7 @@ int start3(char *arg)
     //int		clockPID;
     int		pid;
     int		status;
+    int   index;
     /*
      * Check kernel mode here.
      */
@@ -76,7 +82,12 @@ int start3(char *arg)
     //more for this phase's system call handlings
 
     /* Initialize the DriverList */
-    DriverList = NULL;
+    DriverList_U0 = NULL;
+    DriverList_U1 = NULL;
+    device_zapper = OFF;
+    size_disk = 0;
+    size_sector = 0;
+    size_track = 0;
 
     /* Initialize the phase 4 process table */
     for(i = 0; i < MAXPROC; i++)
@@ -96,7 +107,7 @@ int start3(char *arg)
      * I am assuming a semaphore here for coordination.  A mailbox can
      * be used instead -- your choice.
      */
-    //running = semcreate_real(0);
+    running = semcreate_real(0);
     //clockPID = fork1("Clock driver", ClockDriver, NULL, USLOSS_MIN_STACK, 2);
     /*if (clockPID < 0) 
     {
@@ -128,6 +139,10 @@ int start3(char *arg)
            console("start3(): Can't create disk driver %d\n", i);
            halt(1);
         }
+
+        //place disk device drivers on Driver_Table
+        index = diskpids[i] % MAXPROC;
+        Driver_Table[index].pid = diskpids[i];
     }
     //semp_real(running);
     //semp_real(running);
@@ -148,6 +163,11 @@ int start3(char *arg)
      */
     //zap(clockPID);  // clock driver
     //join(&status); /* for the Clock Driver */
+    
+    device_zapper = ON;
+    join(&status);
+    join(&status);
+
     return 0;
 }/* start3 */
 
@@ -188,36 +208,27 @@ int start3(char *arg)
 static void disk_size(sysargs *args_ptr)
 {
 
-  printf("inside disk_size!\n");
-
   int unit = (int) args_ptr->arg1;
-  int *sector = args_ptr->arg1;
-  int *track = args_ptr->arg2;
-  int *disk = args_ptr->arg3;
+  
+  //temporary containers for int pointers
+  int t_sec = 0;
+  int t_track = 0;
+  int t_disk = 0;
+
+  int *sector = &t_sec;
+  int *track = &t_track;
+  int *disk = &t_disk;
 
   disk_size_real(unit, sector, track, disk);
 
-  //int index = seek_proc_entry();
-
-  //if(index == -1)
-  //{
-    //printf("Driver queue full. terminating...\n");
-    //Terminate(0);
-  //}
-
-  //Driver_Table[index].operation = DISK_TRACKS;
-  //Driver_Table[index].unit = (int) args_ptr->arg1;
-  //DriverList_Insert(&Driver_Table[index]);
-
-  //DiskDriver((char *) Driver_Table[index].unit);
+  args_ptr->arg1 = (void *) *sector;
+  args_ptr->arg2 = (void *) *track;
+  args_ptr->arg3 = (void *) *disk;
 
 }/* disk_size */
 
 int  disk_size_real(int unit, int *sector, int *track, int *disk)
 {
-
-  printf("Inside dis_size_real\n");
-
   int index = seek_proc_entry();
 
   if(index == -1)
@@ -225,17 +236,13 @@ int  disk_size_real(int unit, int *sector, int *track, int *disk)
 
   Driver_Table[index].operation = DISK_TRACKS;
   Driver_Table[index].unit = unit;
-  //Driver_Table[index].sector_start = sector;
-  //Driver_Table[index].track_start = track;
-  //Driver_Table[index].disk_buf = disk;
-  DriverList_Insert(&Driver_Table[index]);
-
-  //switch to DiskDriver somehow
   
+  DriverList_Insert(&Driver_Table[index], Driver_Table[index].unit); 
+  semp_real(running);
   
-  *sector = Driver_Table[index].sector_start;
-  *track  = Driver_Table[index].track_start;
-  disk   = (int *) Driver_Table[index].disk_buf;
+  *sector = size_sector;
+  *track  = size_track;
+  *disk   = size_disk;
 
   //probably need to change later
   return 0;
@@ -251,51 +258,79 @@ int  disk_size_real(int unit, int *sector, int *track, int *disk)
      ----------------------------------------------------------------------- */
 static int DiskDriver(char *arg)
 {
-   int unit = atoi(arg);
+   int unit         = atoi(arg);
    device_request my_request;
    int result;
    int status;
+   driver_proc_ptr  DriverList   = NULL;
+   driver_proc_ptr  current_req  = NULL;
 
-   printf("inside Disk Drivers\n");
-   driver_proc_ptr current_req = NULL;
-
-   //MboxCreate(0, sizeof(int));
-
-   /*
-   if (DEBUG4 && debugflag4)
-      console("DiskDriver(%d): started\n", unit);
-  */
-
-   /* Get the number of tracks for this disk */
    my_request.opr  = DISK_TRACKS;
    my_request.reg1 = &num_tracks[unit];
 
    result = device_output(DISK_DEV, unit, &my_request);
 
-   if (result != DEV_OK) 
+   if (result != DEV_OK)
    {
-      console("DiskDriver %d: did not get DEV_OK on DISK_TRACKS call\n", unit);
-      console("DiskDriver %d: is the file disk%d present???\n", unit, unit);
-      halt(1);
+     console("DiskDriver %d: did not get DEV_OK on DISK_TRACKS call\n", unit);
+     console("DiskDriver %d: is the file disk%d present???\n", unit, unit);
+     halt(1);
    }
 
    waitdevice(DISK_DEV, unit, &status);
-  
+   size_sector = DISK_SECTOR_SIZE;
+   size_track = DISK_TRACK_SIZE;
+   size_disk = num_tracks[unit];
 
-   printf("after wait device\n");
-
-
-   while(DriverList != NULL)
+   while(device_zapper == OFF)
    {
-     current_req = DriverList;
-     DriverList_Pop();
+
+     if(unit == 0)
+       DriverList = DriverList_U0;
+     else if(unit == 1)
+       DriverList = DriverList_U1;
+
+     if(DriverList != NULL)
+     {
+       semv_real(running);
+       current_req = DriverList;
+       DriverList_Pop(unit);
+
+       switch(current_req->operation)
+       {
+         case DISK_TRACKS:
+    
+           my_request.opr  = DISK_TRACKS;
+           my_request.reg1 = &num_tracks[unit];
+
+           result = device_output(DISK_DEV, unit, &my_request);
+
+           if (result != DEV_OK)
+           {
+             console("DiskDriver %d: did not get DEV_OK on DISK_TRACKS call\n", unit);
+             console("DiskDriver %d: is the file disk%d present???\n", unit, unit);
+             halt(1);
+           }
+
+           waitdevice(DISK_DEV, unit, &status);
+           size_disk = num_tracks[unit];
+
+           break;
+         
+         case DISK_READ:
+           printf("In Disk_Read.\n");
+           break;
+         case DISK_WRITE:
+           printf("In Disk_Write.\n");
+           break;
+       }
+     }
+     else
+       semp_real(running);
    }
-
-
-   /*
-   if (DEBUG4 && debugflag4)
-      console("DiskDriver(%d): tracks = %d\n", unit, num_tracks[unit]);
-  */
+   
+   if(device_zapper == ON)
+     quit(0);
 
    //more code 
     return 0;
@@ -311,23 +346,37 @@ static int DiskDriver(char *arg)
      Returns - none
      Side Effects - none
      ----------------------------------------------------------------------- */
-static void DriverList_Insert(driver_proc_ptr dptr)
+static void DriverList_Insert(driver_proc_ptr dptr, int unit_list)
 {
-
-  printf("inside insert\n");
-
   driver_proc_ptr walker = NULL;
-
-  if(DriverList == NULL)
-    DriverList = dptr;
-  else
+  
+  if(unit_list == 0)
   {
-    walker = DriverList;
+    if(DriverList_U0 == NULL)
+      DriverList_U0 = dptr;
+    else
+    {
+      walker = DriverList_U0;
 
-    while(walker->next_ptr != NULL)
-      walker = walker->next_ptr;
+      while(walker->next_ptr != NULL)
+        walker = walker->next_ptr;
 
-    walker->next_ptr = dptr;
+      walker->next_ptr = dptr;
+    }
+  }
+  else if(unit_list == 1)
+  {
+    if(DriverList_U1 == NULL)
+      DriverList_U1 = dptr;
+    else
+    {
+      walker = DriverList_U1;
+
+      while(walker->next_ptr != NULL)
+        walker = walker->next_ptr;
+
+      walker->next_ptr = dptr;
+    }
   }
 
 }/* DriverList_Insert */
@@ -340,13 +389,24 @@ static void DriverList_Insert(driver_proc_ptr dptr)
      Returns - none
      Side Effects - none
      ----------------------------------------------------------------------- */
-static void DriverList_Pop()
+static void DriverList_Pop(int unit)
 {
 
-  if(DriverList->next_ptr == NULL)
-    DriverList = NULL;
-  else
-    DriverList = DriverList->next_ptr;
+  if(unit == 0)
+  {
+    if(DriverList_U0->next_ptr == NULL)
+      DriverList_U0 = NULL;
+    else
+      DriverList_U0 = DriverList_U0->next_ptr;
+  }
+  else if(unit == 1)
+  {
+    if(DriverList_U1->next_ptr == NULL)
+      DriverList_U1 = NULL;
+    else
+      DriverList_U1 = DriverList_U1->next_ptr;
+  }
+
 }/* DriverList_Pop */
 
 /* ------------------------------------------------------------------------

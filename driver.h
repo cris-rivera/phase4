@@ -1,5 +1,8 @@
 #define INIT_VAL 0
 #define DISK_NOT_IN_USE 4
+#define NUM_DISK 2 //Number of Disk Devices present
+#define OFF 5
+#define ON 6
 
 typedef struct driver_proc * driver_proc_ptr;
 
@@ -15,6 +18,8 @@ struct driver_proc {
    int        num_sectors;
    void       *disk_buf;
    int        unit;
+   int        pid;
+   int        mbox_id;
 
    //more fields to add
 
