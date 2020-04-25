@@ -46,6 +46,8 @@ static driver_proc_ptr DriverList_U1; //For Disk Unit 1
 //static int	ClockDriver(char *);
 static int	DiskDriver(char *);
 static void disk_size(sysargs *args_ptr);
+static void disk_write(sysargs *args_ptr);
+static void disk_read(sysargs *args_ptr);
 static void DriverList_Insert(driver_proc_ptr dptr, int unit_list);
 static void DriverList_Pop(int unit);
 static int seek_proc_entry();
@@ -75,8 +77,8 @@ int start3(char *arg)
 
     /* Assignment system call handlers */
     //sys_vec[SYS_SLEEP]    = sleep_first;
-    //sys_vec[SYS_DISKREAD]   = disk_read_first;
-    //sys_vec[SYS_DISKWRITE]  = disk_write_first;
+    sys_vec[SYS_DISKREAD]   = disk_read;
+    sys_vec[SYS_DISKWRITE]  = disk_write;
     sys_vec[SYS_DISKSIZE]   = disk_size;
 
     //more for this phase's system call handlings
@@ -249,6 +251,81 @@ int  disk_size_real(int unit, int *sector, int *track, int *disk)
 
 }
 
+static void disk_write(sysargs *args_ptr)
+{
+  int unit      = (int) args_ptr->arg5;
+  int track     = (int) args_ptr->arg3;
+  int first     = (int) args_ptr->arg4;
+  int sectors   = (int) args_ptr->arg2;
+  void *buf     = args_ptr->arg1;
+  int status    = 0;
+
+  status = disk_write_real(unit, track, first, sectors, buf);
+  args_ptr->arg1 = (void *) status;
+
+}
+
+int disk_write_real(int unit, int track, int first, int sectors, void *buffer)
+{
+  int index = seek_proc_entry();
+
+  if(index == -1)
+    printf("Driver_table full. Should not see this...\n");
+
+  Driver_Table[index].operation      = DISK_WRITE;
+  Driver_Table[index].unit           = unit;
+  Driver_Table[index].track_start    = track;
+  Driver_Table[index].sector_start   = first;
+  Driver_Table[index].num_sectors    = sectors;
+  Driver_Table[index].disk_buf       = buffer;
+
+  DriverList_Insert(&Driver_Table[index], Driver_Table[index].unit);
+  semp_real(running);
+
+  //return status?
+  if(is_zapped())
+    quit(0);
+
+  return 0;
+}
+
+static void disk_read(sysargs *args_ptr)
+{
+  int unit      = (int) args_ptr->arg5;
+  int track     = (int) args_ptr->arg3;
+  int first     = (int) args_ptr->arg4;
+  int sectors   = (int) args_ptr->arg2;
+  void *buf     = args_ptr->arg1;
+  int status    = 0;
+
+  status = disk_read_real(unit, track, first, sectors, buf);
+  args_ptr->arg1 = (void *) status;
+
+}
+
+int disk_read_real(int unit, int track, int first, int sectors, void *buffer)
+{
+  int index = seek_proc_entry();
+
+  if(index == -1)
+    printf("Driver_table full. Should not see this...\n");
+
+  Driver_Table[index].operation     = DISK_WRITE;
+  Driver_Table[index].unit          = unit;
+  Driver_Table[index].track_start   = track;
+  Driver_Table[index].sector_start  = first;
+  Driver_Table[index].num_sectors   = sectors;
+  Driver_Table[index].disk_buf      = buffer;
+
+  DriverList_Insert(&Driver_Table[index], Driver_Table[index].unit);
+  semp_real(running);
+
+  if(is_zapped())
+    quit(0);
+
+  return 0;
+}
+
 /* ------------------------------------------------------------------------
      Name - DiskDriver
      Purpose - none
@@ -318,10 +395,43 @@ static int DiskDriver(char *arg)
            break;
          
          case DISK_READ:
-           printf("In Disk_Read.\n");
+           //printf("In Disk_Read.\n");
+           
+           /* Disk Seek to move arm to the correct locaton */
+           my_request.opr = DISK_SEEK;
+           my_request.reg1 = (void *) current_req->track_start;
+
+           device_output(DISK_DEV, unit, &my_request);
+           waitdevice(DISK_DEV, unit, &status);
+
+           /* Once the location has been found, read from that location. */
+           my_request.opr = DISK_READ;
+           my_request.reg1 = (void *) current_req->sector_start;
+           my_request.reg2 = current_req->disk_buf;
+
+           device_output(DISK_DEV, unit, &my_request);
+           waitdevice(DISK_DEV, unit, &status);
+
            break;
+
          case DISK_WRITE:
-           printf("In Disk_Write.\n");
+           //printf("In Disk_Write.\n");
+           
+           /* Disk Seek to move arm to correct location */
+           my_request.opr = DISK_SEEK;
+           my_request.reg1 = (void *) current_req->track_start;
+
+           device_output(DISK_DEV, unit, &my_request);
+           waitdevice(DISK_DEV, unit, &status);
+
+           /* Once location is found, write to that location. */
+           my_request.opr = DISK_WRITE;
+           my_request.reg1 = (void *) current_req->sector_start;
+           my_request.reg2 = current_req->disk_buf;
+
+           device_output(DISK_DEV, unit, &my_request);
+           waitdevice(DISK_DEV, unit, &status);
+
            break;
        }
      }
