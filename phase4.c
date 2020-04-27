@@ -283,9 +283,14 @@ static void disk_write(sysargs *args_ptr)
   int sectors   = (int) args_ptr->arg2;
   void *buf     = args_ptr->arg1;
   int status    = 0;
+  int result    = 0;
+
+  if(first < 0 || first > 16)
+    result = -1;
 
   status = disk_write_real(unit, track, first, sectors, buf);
   args_ptr->arg1 = (void *) status;
+  args_ptr->arg4 = (void *) result;
 
 }
 
@@ -398,6 +403,12 @@ static int DiskDriver(char *arg)
    driver_proc_ptr  DriverList   = NULL;
    driver_proc_ptr  current_req  = NULL;
    int *running = NULL;
+   int sectors = 0;
+   int sector_mul = 0;
+   //int track = 0;
+   int sector = 0;
+   void * buffer = NULL;
+   void *buffer2 = NULL;
    //int d_pid = getpid() % MAXPROC;
    //Driver_Table[d_pid].mbox_id = MboxCreate(0, sizeof(int));
    //Driver_Table[d_pid].pid = diskpids[unit];
@@ -478,7 +489,12 @@ static int DiskDriver(char *arg)
            break;
          
          case DISK_READ:
-             
+            
+           sectors = current_req->num_sectors;
+           sector_mul = 0;
+           sector = 0;
+           buffer = current_req->disk_buf;
+
            /* Disk Seek to move arm to the correct locaton */
            my_request.opr = DISK_SEEK;
            my_request.reg1 = (void *) current_req->track_start;
@@ -486,13 +502,21 @@ static int DiskDriver(char *arg)
            device_output(DISK_DEV, unit, &my_request);
            waitdevice(DISK_DEV, unit, &status);
 
+           while(sectors > 0)
+           {
+             sector = current_req->sector_start + sector_mul;
+
            /* Once the location has been found, read from that location. */
            my_request.opr = DISK_READ;
-           my_request.reg1 = (void *) current_req->sector_start;
-           my_request.reg2 = current_req->disk_buf;
+           my_request.reg1 = (void *) sector;
+           buffer2 = &buffer[sector_mul * 512];
+           my_request.reg2 = buffer2;
 
            device_output(DISK_DEV, unit, &my_request);
            waitdevice(DISK_DEV, unit, &status);
+           sector_mul++;
+           sectors--;
+           }
 
            current_req->status = status;
            semv_real(*running);
@@ -501,24 +525,38 @@ static int DiskDriver(char *arg)
            break;
 
          case DISK_WRITE:
-           
+
+           sectors = current_req->num_sectors;
+           sector_mul = 0;
+           //track = 0;
+           sector = 0;
+           buffer = current_req->disk_buf;
+           //void *buffer2 = NULL;
+ 
            /* Disk Seek to move arm to correct location */
            my_request.opr = DISK_SEEK;
            my_request.reg1 = (void *) current_req->track_start;
 
            device_output(DISK_DEV, unit, &my_request);
            waitdevice(DISK_DEV, unit, &status);
-
+          
+           while(sectors > 0)
+           {
+             
+             sector = current_req->sector_start + sector_mul;
            /* Once location is found, write to that location. */
            my_request.opr = DISK_WRITE;
-           my_request.reg1 = (void *) current_req->sector_start;
-           my_request.reg2 = current_req->disk_buf;
-
+           my_request.reg1 = (void *) sector;
+           buffer2 = &buffer[sector_mul * 512];
+           my_request.reg2 =  buffer2;
+        
            device_output(DISK_DEV, unit, &my_request);
            waitdevice(DISK_DEV, unit, &status);
-
+           sector_mul++;
+           sectors--;
+           }
+            
            current_req->status = status;
-           //printf("write is done.\n");
            semv_real(*running);
            //printf("Device Driver Write status register: %d\n", status);
 
