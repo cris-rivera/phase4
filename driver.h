@@ -19,7 +19,8 @@ struct driver_proc {
    void       *disk_buf;
    int        unit;
    int        pid;
-   int        mbox_id;
+   int        status; /* holds the status return for Read/Write */
+   //int        mbox_id;
 
    //more fields to add
 
