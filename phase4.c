@@ -72,6 +72,8 @@ int start3(char *arg)
     int		pid;
     int		status;
     int   index;
+    int index_u0;
+    int index_u1;
     /*
      * Check kernel mode here.
      */
@@ -148,6 +150,8 @@ int start3(char *arg)
         index = diskpids[i] % MAXPROC;
         Driver_Table[index].pid = diskpids[i];
     }
+    index_u0 = diskpids[0] % MAXPROC;
+    index_u1 = diskpids[1] % MAXPROC;
     //semp_real(running);
     //semp_real(running);
 
@@ -167,10 +171,12 @@ int start3(char *arg)
      */
     //zap(clockPID);  // clock driver
     //join(&status); /* for the Clock Driver */
+    //printf("%d\n", diskpids[0]);
+    //printf("%d\n", diskpids[1]);
     
     device_zapper = ON;
-    semv_real(running_u0);
-    semv_real(running_u1);
+    MboxRelease(Driver_Table[index_u0].mbox_id);
+    MboxRelease(Driver_Table[index_u1].mbox_id);
     join(&status);
     join(&status);
 
@@ -235,13 +241,16 @@ static void disk_size(sysargs *args_ptr)
 
 int  disk_size_real(int unit, int *sector, int *track, int *disk)
 {
+  //printf("in Disk size real.\n");
   int index = seek_proc_entry();
   int *running = NULL;
-
+  int d_index = diskpids[unit] % MAXPROC;
+  
   if(unit == 0)
     running = &running_u0;
   else if(unit == 1)
     running = &running_u1;
+  
 
   if(index == -1)
     printf("Driver_Table full. should not see this\n");
@@ -249,9 +258,13 @@ int  disk_size_real(int unit, int *sector, int *track, int *disk)
   Driver_Table[index].operation = DISK_TRACKS;
   Driver_Table[index].unit = unit;
   
-  DriverList_Insert(&Driver_Table[index], Driver_Table[index].unit); 
+  DriverList_Insert(&Driver_Table[index], Driver_Table[index].unit);
+  //printf("right before disk size simp.\n");
+  MboxCondSend(Driver_Table[d_index].mbox_id, Driver_Table[index].disk_buf, sizeof(int));
   semp_real(*running);
-  
+ 
+  //printf("after\n");
+
   *sector = size_sector;
   *track  = size_track;
   *disk   = size_disk;
@@ -278,6 +291,15 @@ static void disk_write(sysargs *args_ptr)
 int disk_write_real(int unit, int track, int first, int sectors, void *buffer)
 {
   int index = seek_proc_entry();
+  int *running = NULL;
+  //int control =0;
+
+  
+  if(unit == 0)
+    running = &running_u0;
+  else if (unit == 1)
+    running = &running_u1;
+    
 
   if(index == -1)
     printf("Driver_table full. Should not see this...\n");
@@ -290,8 +312,12 @@ int disk_write_real(int unit, int track, int first, int sectors, void *buffer)
   Driver_Table[index].disk_buf       = buffer;
 
   DriverList_Insert(&Driver_Table[index], Driver_Table[index].unit);
-  printf("disk write real: %s\n", Driver_Table[index].disk_buf);
-  //semp_real(running);
+  //printf("disk write real: %s\n", Driver_Table[index].disk_buf);
+  /*if(*running < 0)
+    semv_real(*running);
+  else*/
+  //printf("value of running: %d\n", *running);
+  semp_real(*running);
 
   //return status?
   if(is_zapped())
@@ -319,6 +345,12 @@ static void disk_read(sysargs *args_ptr)
 int disk_read_real(int unit, int track, int first, int sectors, void *buffer)
 {
   int index = seek_proc_entry();
+  int *running = NULL;
+
+  if(unit == 0)
+    running = &running_u0;
+  else if (unit == 1)
+    running = &running_u1;
 
   if(index == -1)
     printf("Driver_table full. Should not see this...\n");
@@ -331,12 +363,12 @@ int disk_read_real(int unit, int track, int first, int sectors, void *buffer)
   Driver_Table[index].disk_buf      = buffer;
 
   DriverList_Insert(&Driver_Table[index], Driver_Table[index].unit);
-  //semp_real(running);
+  semp_real(*running);
 
   if(is_zapped())
     quit(0);
 
-  printf("disk_read_real status register: %d\n", Driver_Table[index].status);
+  //printf("disk_read_real status register: %d\n", Driver_Table[index].status);
 
   return 0;
 }
@@ -357,11 +389,16 @@ static int DiskDriver(char *arg)
    driver_proc_ptr  DriverList   = NULL;
    driver_proc_ptr  current_req  = NULL;
    int *running = NULL;
+   int d_pid = getpid() % MAXPROC;
+   Driver_Table[d_pid].mbox_id = MboxCreate(0, sizeof(int));
+   Driver_Table[d_pid].pid = diskpids[unit];
 
+   
    if(unit == 0)
      running = &running_u0;
    else if(unit == 1)
      running = &running_u1;
+     
 
    
    my_request.opr  = DISK_TRACKS;
@@ -380,6 +417,8 @@ static int DiskDriver(char *arg)
    size_sector = DISK_SECTOR_SIZE;
    size_track = DISK_TRACK_SIZE;
    size_disk = num_tracks[unit];
+
+   //printf("disk Driver: after initial wait.\n");
    
 
    while(device_zapper == OFF)
@@ -399,7 +438,7 @@ static int DiskDriver(char *arg)
        switch(current_req->operation)
        {
          case DISK_TRACKS:
-    
+          //printf("In DiskTracks for unit %d\n", unit); 
            /*
            my_request.opr  = DISK_TRACKS;
            my_request.reg1 = &num_tracks[unit];
@@ -418,8 +457,12 @@ static int DiskDriver(char *arg)
            //size_track = DISK_TRACK_SIZE;
            //size_disk = num_tracks[unit];
            */
+           //printf("INSIDE UNIT %d\n", unit);
+           //printf("value of running_u0: %d\n", running_u0);
+           //printf("value of running_u1: %d\n", running_u0);
            semv_real(*running);
-          
+
+         //printf("after if else if\n"); 
            break;
          
          case DISK_READ:
@@ -441,7 +484,8 @@ static int DiskDriver(char *arg)
            waitdevice(DISK_DEV, unit, &status);
 
            current_req->status = status;
-           printf("Device Driver Read status register: %d\n", status);
+           semv_real(*running);
+           //printf("Device Driver Read status register: %d\n", status);
 
            break;
 
@@ -464,8 +508,8 @@ static int DiskDriver(char *arg)
            waitdevice(DISK_DEV, unit, &status);
 
            current_req->status = status;
-           //semv_real(running);
-           printf("Device Driver Write status register: %d\n", status);
+           semv_real(*running);
+           //printf("Device Driver Write status register: %d\n", status);
 
            break;
        }
@@ -473,12 +517,16 @@ static int DiskDriver(char *arg)
      else
      {
        //printf("else semp on unit %d\n", unit);
-       semp_real(*running);
+       //semp_real(*running);
+       MboxReceive(Driver_Table[d_pid].mbox_id, Driver_Table[d_pid].disk_buf, sizeof(int));
      }
    }
    
    if(device_zapper == ON)
+   {
+     MboxRelease(Driver_Table[d_pid].mbox_id);
      quit(0);
+   }
 
    //more code 
     return 0;

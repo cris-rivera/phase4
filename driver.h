@@ -20,7 +20,7 @@ struct driver_proc {
    int        unit;
    int        pid;
    int        status; /* holds the status return for Read/Write */
-   //int        mbox_id;
+   int        mbox_id;
 
    //more fields to add
 
