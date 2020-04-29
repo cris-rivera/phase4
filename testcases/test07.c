@@ -78,7 +78,7 @@ int ubiq(int t)
     
     if (status != 0) { 
 	sprintf(buf,"disk_put returned error   %d\n",t);
-	printf(buf);
+	printf("%s\n", buf);
     }  
     else {
 	    cksum+=t;

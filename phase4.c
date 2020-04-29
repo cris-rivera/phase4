@@ -439,6 +439,19 @@ static int DiskDriver(char *arg)
            {
              sector = current_req->sector_start + sector_mul;
 
+             if(sector == 16)
+             {
+               current_req->track_start  = current_req->track_start + 1;
+               current_req->sector_start = 0;
+               sector = 0;
+
+               my_request.opr = DISK_SEEK;
+               my_request.reg1 = (void *) current_req->track_start;
+
+               device_output(DISK_DEV, unit, &my_request);
+               waitdevice(DISK_DEV, unit, &status);
+             }
+
              /* Once the location has been found, read from that location. */
              my_request.opr = DISK_READ;
              my_request.reg1 = (void *) sector;
@@ -476,6 +489,19 @@ static int DiskDriver(char *arg)
            {
              
              sector = current_req->sector_start + sector_mul;
+
+             if(sector == 16)
+             {
+               current_req->track_start  = current_req->track_start + 1;
+               current_req->sector_start = 0;
+               sector = 0;
+
+               my_request.opr = DISK_SEEK;
+               my_request.reg1 = (void *) current_req->track_start;
+
+               device_output(DISK_DEV, unit, &my_request);
+               waitdevice(DISK_DEV, unit, &status);
+             }
 
              /* Once location is found, write to that location. */
              my_request.opr = DISK_WRITE;
