@@ -235,7 +235,8 @@ static void disk_size(sysargs *args_ptr)
 
 int  disk_size_real(int unit, int *sector, int *track, int *disk)
 {
-  int index = seek_proc_entry();
+  //int index = seek_proc_entry();
+  int index = getpid() % MAXPROC;
   int *running = NULL;
   
   if(unit == 0)
@@ -272,10 +273,24 @@ static void disk_write(sysargs *args_ptr)
   int status    = 0;
   int result    = 0;
 
-  if(first < 0 || first > 16)
+  //if(!(first < 0) && !(first > 16) && (!(unit != 0) || !(unit != 1)))
+
+  if(unit < 0)
+    result = -1;
+  else if(unit > 1)
+    result = -1;
+  else if(track < 0)
+    result = -1;
+  else if(track > 15)
+    result = -1;
+  else if(first < 0)
+    result = -1;
+  else if(first > 15)
     result = -1;
 
-  status = disk_write_real(unit, track, first, sectors, buf);
+  if(result == 0)
+    status = disk_write_real(unit, track, first, sectors, buf);
+
   args_ptr->arg1 = (void *) status;
   args_ptr->arg4 = (void *) result;
 
@@ -283,7 +298,8 @@ static void disk_write(sysargs *args_ptr)
 
 int disk_write_real(int unit, int track, int first, int sectors, void *buffer)
 {
-  int index = seek_proc_entry();
+  //int index = seek_proc_entry();
+  int index = getpid() % MAXPROC;
   int *running = NULL;
  
   if(unit == 0)
@@ -328,7 +344,8 @@ static void disk_read(sysargs *args_ptr)
 
 int disk_read_real(int unit, int track, int first, int sectors, void *buffer)
 {
-  int index = seek_proc_entry();
+  //int index = seek_proc_entry();
+  int index = getpid() % MAXPROC;
   int *running = NULL;
 
   if(unit == 0)
