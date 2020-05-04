@@ -211,6 +211,15 @@ int start3(char *arg)
     return 0;
 }* ClockDriver */
 
+/* ------------------------------------------------------------------------
+     Name - disk_size
+     Purpose - Handles the hand off of variables from the system arguments 
+               structure and places return values back into system arguments 
+               strucutre.
+     Parameters - one, a pointer to the system arguments structure.
+     Returns - none
+     Side Effects - none
+     ----------------------------------------------------------------------- */
 static void disk_size(sysargs *args_ptr)
 {
 
@@ -233,9 +242,18 @@ static void disk_size(sysargs *args_ptr)
 
 }/* disk_size */
 
+/* ------------------------------------------------------------------------
+     Name - disk_size_real
+     Purpose - takes care of placing disk requests onto the request list
+               for the specificed disk device, then blocks.
+     Parameters - 4, the unit number, sector number, trak number, and a 
+                  pointer to a disk buffer for read/write.
+     Returns - one, returns 0 if properly run
+     Side Effects - none
+     ----------------------------------------------------------------------- */
 int  disk_size_real(int unit, int *sector, int *track, int *disk)
 {
-  //int index = seek_proc_entry();
+  
   int index = getpid() % MAXPROC;
   int *running = NULL;
   
@@ -261,8 +279,17 @@ int  disk_size_real(int unit, int *sector, int *track, int *disk)
   //probably need to change later
   return 0;
 
-}
+}/* disk_size_real */
 
+/* ------------------------------------------------------------------------
+     Name - disk_write
+     Purpose - Handles the hand off of variables from the system arguments
+               structure and places return values back into system arguments
+               strucutre.
+     Parameters - one, System arguments structure
+     Returns - none
+     Side Effects - none
+     ----------------------------------------------------------------------- */
 static void disk_write(sysargs *args_ptr)
 {
   int unit      = (int) args_ptr->arg5;
@@ -272,8 +299,6 @@ static void disk_write(sysargs *args_ptr)
   void *buf     = args_ptr->arg1;
   int status    = 0;
   int result    = 0;
-
-  //if(!(first < 0) && !(first > 16) && (!(unit != 0) || !(unit != 1)))
 
   if(unit < 0)
     result = -1;
@@ -294,11 +319,20 @@ static void disk_write(sysargs *args_ptr)
   args_ptr->arg1 = (void *) status;
   args_ptr->arg4 = (void *) result;
 
-}
+}/* disk_write */
 
+/* ------------------------------------------------------------------------
+     Name - disk_write_real
+     Purpose - takes care of placing disk requests onto the request list
+               for the specificed disk device, then blocks.
+     Parameters - 4, the unit number, sector number, trak number, and a
+                  pointer to a disk buffer for read/write.
+     Returns - one, returns 0 if properly run
+     Side Effects - none
+     ----------------------------------------------------------------------- */
 int disk_write_real(int unit, int track, int first, int sectors, void *buffer)
 {
-  //int index = seek_proc_entry();
+  
   int index = getpid() % MAXPROC;
   int *running = NULL;
  
@@ -326,8 +360,17 @@ int disk_write_real(int unit, int track, int first, int sectors, void *buffer)
     quit(0);
 
   return 0;
-}
+}/* disk_write_real */
 
+/* ------------------------------------------------------------------------
+     Name - disk_read
+     Purpose - Handles the hand off of variables from the system arguments
+               structure and places return values back into system arguments
+               strucutre.
+     Parameters - one, System arguments structure
+     Returns - none
+     Side Effects - none
+     ----------------------------------------------------------------------- */
 static void disk_read(sysargs *args_ptr)
 {
   int unit      = (int) args_ptr->arg5;
@@ -340,11 +383,20 @@ static void disk_read(sysargs *args_ptr)
   status = disk_read_real(unit, track, first, sectors, buf);
   args_ptr->arg1 = (void *) status;
 
-}
+}/* disk_read */
 
+/* ------------------------------------------------------------------------
+     Name - disk_read_real
+     Purpose - takes care of placing disk requests onto the request list
+               for the specificed disk device, then blocks.
+     Parameters - 4, the unit number, sector number, trak number, and a
+                  pointer to a disk buffer for read/write.
+     Returns - one, returns 0 if properly run
+     Side Effects - none
+     ----------------------------------------------------------------------- */
 int disk_read_real(int unit, int track, int first, int sectors, void *buffer)
 {
-  //int index = seek_proc_entry();
+  
   int index = getpid() % MAXPROC;
   int *running = NULL;
 
@@ -370,7 +422,7 @@ int disk_read_real(int unit, int track, int first, int sectors, void *buffer)
     quit(0);
 
   return 0;
-}
+}/* disk_read_real */
 
 /* ------------------------------------------------------------------------
      Name - DiskDriver
