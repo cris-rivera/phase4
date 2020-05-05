@@ -75,7 +75,7 @@ int ubiq(int t)
     if (DiskWrite(XXbuf[z], 1, z, z, 1, &status) < 0) {
 	printf("ERROR: DiskPut\n");
     } 
-    
+
     if (status != 0) { 
 	sprintf(buf,"disk_put returned error   %d\n",t);
 	printf("%s\n", buf);
@@ -104,12 +104,12 @@ int start4(char *arg)
     Spawn("k2", k2, NULL, USLOSS_MIN_STACK, 4, &pid);
     Spawn("k3", k3, NULL, USLOSS_MIN_STACK, 4, &pid);
     Spawn("k4", k4, NULL, USLOSS_MIN_STACK, 4, &pid);
-
+    
     Wait(&pid, &status);
     Wait(&pid, &status);
     Wait(&pid, &status);
     Wait(&pid, &status);
-
+    
     strcpy(XXbuf[0],"xxx");
     strcpy(XXbuf[1],"xxx");
     strcpy(XXbuf[2],"xxx");

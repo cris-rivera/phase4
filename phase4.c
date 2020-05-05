@@ -44,7 +44,6 @@ static driver_proc_ptr DriverList_U1; //For Disk Unit 1
 
 /* ------------------------- Prototypes ----------------------------------- */
 
-//static int	ClockDriver(char *);
 static int	DiskDriver(char *);
 static void disk_size(sysargs *args_ptr);
 static void disk_write(sysargs *args_ptr);
@@ -65,20 +64,13 @@ static int seek_proc_entry();
 int start3(char *arg)
 {
     char	name[128];
-    //char  termbuf[10];
     char  buf[10];
     int		i;
-    //int		clockPID;
     int		pid;
     int		status;
     int   index;
-    
-    /*
-     * Check kernel mode here.
-     */
 
     /* Assignment system call handlers */
-    //sys_vec[SYS_SLEEP]    = sleep_first;
     sys_vec[SYS_DISKREAD]   = disk_read;
     sys_vec[SYS_DISKWRITE]  = disk_write;
     sys_vec[SYS_DISKSIZE]   = disk_size;
@@ -113,19 +105,6 @@ int start3(char *arg)
      */
     running_u0 = semcreate_real(0);
     running_u1 = semcreate_real(0);
-    //clockPID = fork1("Clock driver", ClockDriver, NULL, USLOSS_MIN_STACK, 2);
-    /*if (clockPID < 0) 
-    {
-      console("start3(): Can't create clock driver\n");
-	    halt(1);
-    }*/
-    
-    /*
-     * Wait for the clock driver to start. The idea is that ClockDriver
-     * will V the semaphore "running" once it is running.
-     */
-
-    //semp_real(running);
 
     /*
      * Create the disk device drivers here.  You may need to increase
@@ -150,10 +129,6 @@ int start3(char *arg)
         Driver_Table[index].pid = diskpids[i];
     }
     
-    //semp_real(running);
-    //semp_real(running);
-
-
     /*
      * Create first user-level process and wait for it to finish.
      * These are lower-case because they are not system calls;
@@ -167,49 +142,12 @@ int start3(char *arg)
     /*
      * Zap the device drivers
      */
-    //zap(clockPID);  // clock driver
-    //join(&status); /* for the Clock Driver */
-    
     device_zapper = ON;
     join(&status);
     join(&status);
 
     return 0;
 }/* start3 */
-
-/* ------------------------------------------------------------------------
-     Name - ClockDriver
-     Purpose - none
-     Parameters - none
-     Returns - none
-     Side Effects - none
-     ----------------------------------------------------------------------- */
-/*static int ClockDriver(char *arg)
-{
-    int result;
-    int status;
-
-    *
-     * Let the parent know we are running and enable interrupts.
-     *
-    semv_real(running);
-    psr_set(psr_get() | PSR_CURRENT_INT);
-    while(! is_zapped()) 
-    {
-      result = waitdevice(CLOCK_DEV, 0, &status);
-	
-      if (result != 0)
-      { 
-        return 0;
-      }
-	
-      *
-	     * Compute the current time and wake up any processes
-	     * whose time has come.
-	     *
-    }
-    return 0;
-}* ClockDriver */
 
 /* ------------------------------------------------------------------------
      Name - disk_size
@@ -253,8 +191,7 @@ static void disk_size(sysargs *args_ptr)
      ----------------------------------------------------------------------- */
 int  disk_size_real(int unit, int *sector, int *track, int *disk)
 {
-  
-  int index = getpid() % MAXPROC;
+  int index = seek_proc_entry();
   int *running = NULL;
   
   if(unit == 0)
@@ -332,8 +269,7 @@ static void disk_write(sysargs *args_ptr)
      ----------------------------------------------------------------------- */
 int disk_write_real(int unit, int track, int first, int sectors, void *buffer)
 {
-  
-  int index = getpid() % MAXPROC;
+  int index = seek_proc_entry();
   int *running = NULL;
  
   if(unit == 0)
@@ -396,8 +332,7 @@ static void disk_read(sysargs *args_ptr)
      ----------------------------------------------------------------------- */
 int disk_read_real(int unit, int track, int first, int sectors, void *buffer)
 {
-  
-  int index = getpid() % MAXPROC;
+  int index = seek_proc_entry();
   int *running = NULL;
 
   if(unit == 0)
@@ -553,12 +488,12 @@ static int DiskDriver(char *arg)
 
            device_output(DISK_DEV, unit, &my_request);
            waitdevice(DISK_DEV, unit, &status);
-          
+                   
            while(sectors > 0)
            {
              
              sector = current_req->sector_start + sector_mul;
-
+              
              if(sector == 16)
              {
                current_req->track_start  = current_req->track_start + 1;
@@ -698,5 +633,5 @@ static int seek_proc_entry()
   }
 
   return -1;
-}/* seek_proc_entry */
+} /* seek_proc_entry */
 
